@@ -22,12 +22,15 @@ References:
 */
 
 var fs = require('fs');
+var rest = require('restler');
 var program = require('commander');
 var cheerio = require('cheerio');
+var URLFILE_DEFAULT = "http://powerful-headland-7442.herokuapp.com";
 var HTMLFILE_DEFAULT = "index.html";
 var CHECKSFILE_DEFAULT = "checks.json";
+var util = require('util');
 
-var assertFileExists = function(infile) {
+function assertFileExists(infile) {
     var instr = infile.toString();
     if(!fs.existsSync(instr)) {
         console.log("%s does not exist. Exiting.", instr);
@@ -36,39 +39,83 @@ var assertFileExists = function(infile) {
     return instr;
 };
 
-var cheerioHtmlFile = function(htmlfile) {
-    return cheerio.load(fs.readFileSync(htmlfile));
-};
-
-var loadChecks = function(checksfile) {
+function loadChecks(checksfile) {
     return JSON.parse(fs.readFileSync(checksfile));
 };
 
-var checkHtmlFile = function(htmlfile, checksfile) {
-    $ = cheerioHtmlFile(htmlfile);
+function cheerioFile(htmlfile) {
+    return cheerio.load(fs.readFileSync(htmlfile));
+};
+
+
+function checkFiles(datafile, checksfile){
     var checks = loadChecks(checksfile).sort();
     var out = {};
     for(var ii in checks) {
-        var present = $(checks[ii]).length > 0;
+        var present = datafile(checks[ii]).length > 0;
         out[checks[ii]] = present;
     }
-    return out;
+    return out;	
 };
 
-var clone = function(fn) {
+function checkHtmlFile(htmlfile, checksfile) {
+    $ = cheerioFile(htmlfile);
+	var out = checkFiles($, checksfile);
+	writeJSON(out);
+	
+};
+
+function cheerioURL(result) {
+    return cheerio.load(result);
+};
+
+function buildfn(checksfile) {
+    var response2console = function(result, response) {
+        if (result instanceof Error) {
+            console.error('Error: ' + util.format(response.message));
+        } else {
+          
+			$ = cheerioURL(result);
+			var out = checkFiles($, checksfile);
+			writeJSON(out);
+        }
+    };
+    return response2console;
+};
+
+
+function checkURLFile(urlfile, checksfile) {
+    
+    var htmlfile = buildfn(checksfile);
+    rest.get(urlfile).on('complete', htmlfile);
+};
+
+function writeJSON(out){
+	
+	var outJson = JSON.stringify(out, null, 4);
+	console.log(outJson);
+	
+}
+
+function clone(fn) {
     // Workaround for commander.js issue.
     // http://stackoverflow.com/a/6772648
     return fn.bind({});
 };
 
+
 if(require.main == module) {
     program
         .option('-c, --checks <check_file>', 'Path to checks.json', clone(assertFileExists), CHECKSFILE_DEFAULT)
         .option('-f, --file <html_file>', 'Path to index.html', clone(assertFileExists), HTMLFILE_DEFAULT)
+		.option('-u, --url <url_file>', 'URL to index.html')
         .parse(process.argv);
-    var checkJson = checkHtmlFile(program.file, program.checks);
-    var outJson = JSON.stringify(checkJson, null, 4);
-    console.log(outJson);
+
+		if (program.url)
+			checkURLFile(program.url, program.checks); 
+		else
+			checkHtmlFile(program.file, program.checks);
+		
 } else {
     exports.checkHtmlFile = checkHtmlFile;
 }
